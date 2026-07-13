@@ -1,0 +1,298 @@
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* The plugin window itself never scrolls — only the details list (#rows) does. */
+  html, body { overflow: hidden; }
+  body {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 11px;
+    color: var(--figma-color-text, #333);
+    background: var(--figma-color-bg, #fff);
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    gap: 10px;
+  }
+  h2 { font-size: 13px; font-weight: 600; }
+  .hint { color: var(--figma-color-text-secondary, #888); line-height: 1.5; }
+  .selection {
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--figma-color-bg-secondary, #f5f5f5);
+    font-weight: 500;
+  }
+  .selection.empty { color: var(--figma-color-text-secondary, #888); font-weight: 400; }
+  label.option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  label.field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  label.field select {
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--figma-color-text, #333);
+    background: var(--figma-color-bg-secondary, #f5f5f5);
+    border: 1px solid var(--figma-color-border, #e0e0e0);
+    border-radius: 6px;
+    padding: 5px 8px;
+    cursor: pointer;
+  }
+  button {
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  #generate {
+    background: var(--figma-color-bg-brand, #0d99ff);
+    color: var(--figma-color-text-onbrand, #fff);
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #clear {
+    background: transparent;
+    color: var(--figma-color-text-danger, #e03e3e);
+    border: 1px solid var(--figma-color-border, #e0e0e0);
+  }
+  #close {
+    background: transparent;
+    color: var(--figma-color-text, #333);
+    border: 1px solid var(--figma-color-border, #e0e0e0);
+  }
+  .buttons { display: flex; gap: 8px; }
+  .buttons #generate,
+  .buttons #clear { flex: 1; }
+  #results {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    border-top: 1px solid var(--figma-color-border, #e0e0e0);
+    padding-top: 10px;
+  }
+  .row { line-height: 1.4; }
+  .row .name { font-weight: 600; }
+  .row .tags { color: var(--figma-color-text-secondary, #888); }
+  .row.skipped .tags { font-style: italic; }
+  .badge {
+    display: inline-block;
+    margin-left: 5px;
+    padding: 0 5px;
+    border-radius: 4px;
+    font-size: 9px;
+    vertical-align: middle;
+    background: var(--figma-color-bg-brand-tertiary, #e5f4ff);
+    color: var(--figma-color-text-brand, #0d99ff);
+  }
+  #summary { font-weight: 600; }
+  #toggle-details {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: fit-content;
+    margin: 0;
+    padding: 2px 0;
+    background: transparent;
+    border: none;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--figma-color-text-secondary, #888);
+    cursor: pointer;
+  }
+  #toggle-details:hover { color: var(--figma-color-text, #333); }
+  #toggle-details .chev { transition: transform 0.12s ease; }
+  #toggle-details.expanded .chev { transform: rotate(90deg); }
+  #rows { display: none; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+  #rows.expanded { display: flex; }
+</style>
+
+<h2>Easy Tag</h2>
+<p class="hint">Select icon master components (or frames containing them), then generate up to 5 search tags into each component's description, in the language you pick. Icon names can be in English or Vietnamese. Names the built-in dictionary can't cover are looked up from a free online source.</p>
+
+<div class="selection empty" id="selection">No components selected</div>
+
+<label class="field">
+  <span>Description language</span>
+  <select id="lang">
+    <option value="en">English</option>
+    <option value="vi">Tiếng Việt</option>
+  </select>
+</label>
+
+<label class="option">
+  <input type="checkbox" id="overwrite">
+  Overwrite existing descriptions
+</label>
+
+<label class="option">
+  <input type="checkbox" id="online" checked>
+  Look up names not in the dictionary online
+</label>
+
+<div class="buttons">
+  <button id="generate" disabled>Generate descriptions</button>
+</div>
+<div class="buttons">
+  <button id="clear" disabled>Clear descriptions</button>
+  <button id="close">Close</button>
+</div>
+
+<div id="results">
+  <div id="summary"></div>
+  <button id="toggle-details" type="button" aria-expanded="false">
+    <svg class="chev" width="10" height="10" viewBox="0 0 16 16" fill="none"
+         stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 3 11 8 6 13"></polyline>
+    </svg>
+    <span id="toggle-label">View details</span>
+  </button>
+  <div id="rows"></div>
+</div>
+
+<script>
+  const selectionEl = document.getElementById('selection');
+  const generateBtn = document.getElementById('generate');
+  const clearBtn = document.getElementById('clear');
+  const resultsEl = document.getElementById('results');
+  const summaryEl = document.getElementById('summary');
+  const rowsEl = document.getElementById('rows');
+  const toggleBtn = document.getElementById('toggle-details');
+  const toggleLabel = document.getElementById('toggle-label');
+
+  let selectedCount = 0;
+  let busy = false;
+  let detailCount = 0;
+
+  // Ask the plugin to resize the window to fit the current content, so the
+  // window itself grows when the details list is expanded (rather than
+  // scrolling inside a fixed height).
+  function syncHeight() {
+    parent.postMessage({ pluginMessage: {
+      type: 'resize',
+      height: document.documentElement.scrollHeight,
+    } }, '*');
+  }
+
+  function setDetailsExpanded(expanded) {
+    rowsEl.classList.toggle('expanded', expanded);
+    toggleBtn.classList.toggle('expanded', expanded);
+    toggleBtn.setAttribute('aria-expanded', String(expanded));
+    toggleLabel.textContent = (expanded ? 'Hide details' : 'View details') + ' (' + detailCount + ')';
+    syncHeight();
+  }
+
+  toggleBtn.onclick = () => setDetailsExpanded(!rowsEl.classList.contains('expanded'));
+
+  function refreshButtons() {
+    const disabled = busy || selectedCount === 0;
+    generateBtn.disabled = disabled;
+    clearBtn.disabled = disabled;
+  }
+
+  generateBtn.onclick = () => {
+    busy = true;
+    generateBtn.textContent = 'Generating…';
+    refreshButtons();
+    parent.postMessage({ pluginMessage: {
+      type: 'generate',
+      overwrite: document.getElementById('overwrite').checked,
+      online: document.getElementById('online').checked,
+      lang: document.getElementById('lang').value,
+    } }, '*');
+  };
+
+  clearBtn.onclick = () => {
+    busy = true;
+    clearBtn.textContent = 'Clearing…';
+    refreshButtons();
+    parent.postMessage({ pluginMessage: { type: 'clear' } }, '*');
+  };
+
+  document.getElementById('close').onclick = () => {
+    parent.postMessage({ pluginMessage: { type: 'close' } }, '*');
+  };
+
+  const LABELS = {
+    updated: (r) => r.tags.join(', '),
+    cleared: () => 'description cleared',
+    'already-empty': () => 'already empty',
+    'skipped-existing': () => 'skipped, already has a description',
+    'no-tags': () => 'no tags found (dictionary or online)',
+  };
+
+  const SUMMARY = [
+    ['updated', 'updated'],
+    ['cleared', 'cleared'],
+    ['skipped-existing', 'skipped (has description)'],
+    ['already-empty', 'already empty'],
+    ['no-tags', 'no tags found'],
+  ];
+
+  onmessage = (event) => {
+    const msg = event.data.pluginMessage;
+    if (!msg) return;
+
+    if (msg.type === 'selection') {
+      selectedCount = msg.count;
+      selectionEl.textContent = selectedCount === 0
+        ? 'No components selected'
+        : selectedCount + ' component' + (selectedCount === 1 ? '' : 's') + ' selected';
+      selectionEl.classList.toggle('empty', selectedCount === 0);
+      refreshButtons();
+    }
+
+    if (msg.type === 'results') {
+      busy = false;
+      generateBtn.textContent = 'Generate descriptions';
+      clearBtn.textContent = 'Clear descriptions';
+      refreshButtons();
+      if (msg.results.length === 0) return;
+
+      const summary = SUMMARY
+        .map(([status, label]) => {
+          const n = msg.results.filter((r) => r.status === status).length;
+          return n ? n + ' ' + label : null;
+        })
+        .filter(Boolean)
+        .join(' · ');
+      summaryEl.textContent = summary;
+
+      rowsEl.innerHTML = '';
+      for (const r of msg.results) {
+        const acted = r.status === 'updated' || r.status === 'cleared';
+        const row = document.createElement('div');
+        row.className = 'row' + (acted ? '' : ' skipped');
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = r.name + ' — ';
+        const tags = document.createElement('span');
+        tags.className = 'tags';
+        tags.textContent = (LABELS[r.status] || (() => r.status))(r);
+        row.appendChild(name);
+        row.appendChild(tags);
+        if (r.status === 'updated' && (r.source === 'online' || r.source === 'mixed')) {
+          const badge = document.createElement('span');
+          badge.className = 'badge';
+          badge.textContent = r.source === 'online' ? 'online' : '+online';
+          row.appendChild(badge);
+        }
+        rowsEl.appendChild(row);
+      }
+      resultsEl.style.display = 'flex';
+      detailCount = msg.results.length;
+      setDetailsExpanded(false);
+    }
+  };
+
+  // Fit the window to the initial content, and again after fonts settle.
+  requestAnimationFrame(syncHeight);
+  window.addEventListener('load', syncHeight);
+</script>

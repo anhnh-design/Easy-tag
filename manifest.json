@@ -1,0 +1,20 @@
+{
+  "name": "Easy tag",
+  "id": "1658392955187945313",
+  "api": "1.0.0",
+  "main": "code.js",
+  "capabilities": [],
+  "enableProposedApi": false,
+  "documentAccess": "dynamic-page",
+  "editorType": [
+    "figma"
+  ],
+  "ui": "ui.html",
+  "networkAccess": {
+    "allowedDomains": [
+      "https://api.datamuse.com",
+      "https://dict.minhqnd.com"
+    ],
+    "reasoning": "Fills in tags for icon names the built-in dictionary doesn't cover: Datamuse for English synonyms, dict.minhqnd.com for Vietnamese."
+  }
+}
